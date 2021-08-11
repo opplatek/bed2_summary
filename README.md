@@ -53,5 +53,16 @@ Then you can run:
 ## contact
 please send questions or bugs to yutianxiong@gmail.com
 
-
+## Prepare references for other organisms
+```
+assembly=mm10
+mkdir ~/tools/bed2_summary-6c01dc3/annotation/$assembly
+samtools faidx ~/tools/piPipes-c93bde3/common/$assembly/$assembly.piRNAcluster.fa
+cat ~/tools/piPipes-c93bde3/common/$assembly/$assembly.piRNAcluster.fa.fai | cut -f1,2 > ~/tools/bed2_summary-6c01dc3/annotation/$assembly/piRNAcluster.sizes
+cat ~/tools/piPipes-c93bde3/common/$assembly/$assembly.genes.bed12 > ~/tools/bed2_summary-6c01dc3/annotation/$assembly/gene.bed12
+samtools faidx ~/tools/piPipes-c93bde3/common/$assembly/$assembly.genes.fa
+cat ~/tools/piPipes-c93bde3/common/$assembly/$assembly.genes.fa.fai | cut -f1,2 > ~/tools/bed2_summary-6c01dc3/annotation/$assembly/gene.sizes
+samtools faidx ~/tools/piPipes-c93bde3/common/$assembly/$assembly.repBase.fa
+cat ~/tools/piPipes-c93bde3/common/$assembly/$assembly.repBase.fa.fai | cut -f1,2 > ~/tools/bed2_summary-6c01dc3/annotation/$assembly/repBase.sizes
+```
 
