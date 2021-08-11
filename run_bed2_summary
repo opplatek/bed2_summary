@@ -1,4 +1,9 @@
 #!/bin/bash
+#
+# Modified original from https://github.com/tianxiongbb/bed2_summary to run for mm10
+# Original was designed for dm3. mm10 doesn't have some of the annotations
+# Other scripts from the same repo has been adjusted as well
+#
 
 #help file
 help_info(){
@@ -17,7 +22,7 @@ Parameters:
         miRNA: normalized to reads per million mapped miRNA reads
         uniq: normalized to reads per million mapped reads exclude miRNA and rRNA reads
     -G how deep you want to analysis genes. default: 1
-	0) not analysis
+    0) not analysis
         1) get normalized srna reads number and species for each gene
         2) also get buckets for each genes. It may takes more than 2 hour and the buckets pdf size may be more than 200M
     -h help information
@@ -27,28 +32,29 @@ EOF
 echo -e "\033[0m"
 }
 if [ $# -lt 1 ];then
-	help_info && exit 1
+    help_info && exit 1
 fi
 
 #parameters
 IN2=0
-PATH_PROG=`dirname $0`
+#PATH_PROG=`dirname $0`
+PATH_PROG=`dirname $(which run_bed2_summary)`
 CPU=1
 GENE=1
 METHOD=miRNA
-GENOME=dm3
+GENOME=mm10
 while getopts "ht:c:p:o:g:n:G:" OPTION; do
-	case $OPTION in
-		h)	help_info && exit 1 ;;
-		t)	IN2=`readlink -f ${OPTARG}` ;;
-		c)	IN1=`readlink -f ${OPTARG}` ;;
-		p)	CPU=${OPTARG} ;;
-		o)	OUTDIR=`readlink -f ${OPTARG}` ;;
-		n)	METHOD=${OPTARG} ;;
-		g)	GENOME=${OPTARG} ;;
-		G)	GENE=${OPTARG} ;;
-		*)	help_info && exit 1 ;;
-	esac
+    case $OPTION in
+        h)	help_info && exit 1 ;;
+        t)	IN2=`readlink -f ${OPTARG}` ;;
+        c)	IN1=`readlink -f ${OPTARG}` ;;
+        p)	CPU=${OPTARG} ;;
+        o)	OUTDIR=`readlink -f ${OPTARG}` ;;
+        n)	METHOD=${OPTARG} ;;
+        g)	GENOME=${OPTARG} ;;
+        G)	GENE=${OPTARG} ;;
+        *)	help_info && exit 1 ;;
+    esac
 done
 
 ###############
@@ -67,150 +73,158 @@ done
 
 for size in 20-23 24-32 0-100 #seperate siRNA piRNA and smRNA
 do
-	echo0 4 "\n------ analyze "$size"nt smallRNAs ------\n"
-	###run for the first sample
-	IN_DIR=`dirname ${IN1}`
-	IN_SAMPLE=`basename ${IN1}`
-	OUTDIR=${OUTDIR%\/}
-	PREFIX1=${OUTDIR}/${IN_SAMPLE}.${size}nt
-	PIRNA=`readlink -f ${IN_DIR}/transposon_piRNAcluster_mapping_normalized_by*/${IN_SAMPLE}.x_rRNA.piRNAcluster.a*.insert.bed2`
-	[ -z ${PIRNA} ] && echo0 "no file in ${IN_DIR}/transposon_piRNAcluster_mapping_normalized_by*/${IN_SAMPLE}.x_rRNA.piRNAcluster.a*.insert.bed2, please specify the right dir/sample via -c" && exit 1
-	awk -v sz=$size 'BEGIN{FS=OFS="\t";split(sz,szsp,"-");l=szsp[1];r=szsp[2]} {if(($3-$2)>=l && ($3-$2)<=r){print $0}}' ${PIRNA} > ${PREFIX1}.temp.piRNA.bed2 && PIRNA=${PREFIX1}.temp.piRNA.bed2 
-	TRANSPOSON=`readlink -f ${IN_DIR}/transposon_piRNAcluster_mapping_normalized_by*/${IN_SAMPLE}.x_rRNA.transposon.a*.insert.bed2`
-	awk -v sz=$size 'BEGIN{FS=OFS="\t";split(sz,szsp,"-");l=szsp[1];r=szsp[2]} {if(($3-$2)>=l && ($3-$2)<=r){print $0}}' ${TRANSPOSON} > ${PREFIX1}.temp.transposon.bed2 && TRANSPOSON=${PREFIX1}.temp.transposon.bed2
-	if [ "$METHOD" == "miRNA" ];then
-		HAIRPIN=`readlink -f ${IN_DIR}/hairpins_mapping/${IN_SAMPLE}.x_rRNA.hairpin.v*m*.bed2`
-	else
-		HAIRPIN=`readlink -f ${IN_DIR}/genome_mapping/${IN_SAMPLE}.x_rRNA.x_hairpin.${GENOME}v*.unique.bed2`
-	fi
-	#calculate normlization factor
-	echo0 2 "calculate normalization factor for control sample......"
-	FACTOR=(`awk '{sum+=$4/$5} END{print sum/1000000}' ${HAIRPIN}`)
-	echo0 3 "....normalization factor: "$FACTOR
-	#get summary for picluster reads
-	echo0 2 "begin summarize picluster......"
-	echo0 2 "....run get_bed2_summary"
-	get_bed2_summary ${PIRNA} ${PATH_PROG}/annotation/dm3/piRNAcluster.sizes ${PREFIX1} ${FACTOR} ${CPU} picluster
-	echo0 2 "....calculate signal for each position"
-	bed2_bucket ${PIRNA} ${PATH_PROG}/annotation/dm3/piRNAcluster.sizes ${PREFIX1}.picluster.cov ${FACTOR}
-	awk 'BEGIN{FS=OFS="\t"} {a[$1"_"($2%1000)]+=($3);b[$1"_"($2%1000)]+=($5);c[$1"_"($2%1000)]+=(-$4);d[$1"_"($2%1000)]+=(-$6)} END{print "sense_all\tanti_all\tsense_uniq\tanti_uniq";for(i in a){print i,a[i],c[i],b[i],d[i]}}' ${PREFIX1}.picluster.cov  > ${PREFIX1}.picluster.chopped.summary
-	echo0 2 "....merge summary files"
-	merged_bed2_summary.R ${PREFIX1}.picluster
-	#get summary for transposon reads
-	echo0 2 "begin summarize transposon for control sample......"
-	echo0 2 "....run get_bed2_summary"
-	get_bed2_summary ${TRANSPOSON} ${PATH_PROG}/annotation/dm3/transposon.sizes ${PREFIX1} ${FACTOR} ${CPU} transposon
-	echo0 2 "....calculate signal for each position"
-	bed2_bucket ${TRANSPOSON} ${PATH_PROG}/annotation/dm3/transposon.sizes ${PREFIX1}.transposon.cov ${FACTOR}
-	echo0 2 "....merge summary files"
-	merged_bed2_summary.R ${PREFIX1}.transposon
-	#get summary for gene reads
-	if [ $GENE -gt 0 ];then # if -g is bigger than 0, make bed2 file for genes
-		echo0 2 "begin summarize gene for control sample......"
-		GF=`readlink -f ${IN_DIR}/genome_mapping/${IN_SAMPLE}.x_rRNA.x_hairpin.${GENOME}v*.all.bed2`
-		awk -v sz=$size 'BEGIN{FS=OFS="\t";split(sz,szsp,"-");l=szsp[1];r=szsp[2]} {if(($3-$2)>=l && ($3-$2)<=r){print $0}}' ${GF} > ${PREFIX1}.temp.gene.bed2 && GF=${PREFIX1}.temp.gene.bed2 
-		echo0 2 "....intersect with gene.bed12"
-		bedtools intersect -split -nonamecheck -a ${GF} -b ${PATH_PROG}/annotation/dm3/gene.bed12 -wo -f 1 | awk 'BEGIN{FS=OFS="\t"} {gn=$11;if($6==$13){strand="+";s=$2-$9;e=$3-$9}else{strand="-";s=$10-$3;e=$10-$2};print gn,s,e,$4,$5,strand,$7}' > ${PREFIX1}_temp_gene.bed2 
-	fi
-	if [ $GENE -gt 1 ];then # if -g is bigger than 1, make files for gene buckets
-		echo0 2 "....calculate signal for each position"
-		bed2_bucket ${PREFIX1}_temp_gene.bed2 ${PATH_PROG}/annotation/dm3/gene.sizes ${PREFIX1}.gene.cov ${FACTOR}
-		awk 'BEGIN{FS=OFS="\t"} {if(NR==FNR){a[$2]=$1}else{$1=a[$1];print $0}}' ${PATH_PROG}/annotation/dm3/gene.map ${PREFIX1}_temp_gene.bed2 > ${PREFIX1}_temp_gene.transform.bed2
-		echo0 2 "....run get_bed2_summary"
-		get_bed2_summary ${PREFIX1}_temp_gene.transform.bed2 ${PATH_PROG}/annotation/dm3/gene.map ${PREFIX1} ${FACTOR} ${CPU} gene
-		echo0 2 "....transform gene id to gene name"
-		transform_id_to_name.R ${PREFIX1}.gene ${PATH_PROG}/annotation/dm3/gene.map
-		echo0 2 "....merge summary files"
-		merged_bed2_summary.R ${PREFIX1}.gene
-	fi
-	if [ $GENE -eq 1 ];then # if -g is 1, calculate rpm and species for each gene
-		awk -v factor=${FACTOR} 'BEGIN{FS=OFS="\t";print "uniq_sense_reads\tuniq_antisense_reads\tall_sense_reads\tall_antisense_reads\tuniq_sense_species\tuniq_antisense_species\tall_sense_species\tall_antisense_species"} {if(NR==FNR){if($6=="+" && $5==1){usr[$1]+=$4;uss[$1]++}else if($6=="-" && $5==1){uar[$1]+=$4;uas[$1]++};if($6=="+"){asr[$1]+=$4/$5;ass[$1]+=1/$5}else{aar[$1]+=$4/$5;aas[$1]+=1/$5}}else{print $1,usr[$1]/factor,uar[$1]/factor,asr[$1]/factor,aar[$1]/factor,uss[$1]/1,uas[$1]/1,ass[$1]/1,aas[$1]/1}}' ${PREFIX1}_temp_gene.bed2 ${PATH_PROG}/annotation/dm3/gene.sizes > ${PREFIX1}.gene.summary
-	fi
-	
-	###run for the second sample if -c is set
-	if [ "${IN2}" != "0" ];then
-		IN_DIR=`dirname ${IN2}`
-		IN_SAMPLE=`basename ${IN2}`
-		OUTDIR=${OUTDIR%\/}
-		PREFIX2=${OUTDIR}/${IN_SAMPLE}.${size}nt
-		PIRNA=`readlink -f ${IN_DIR}/transposon_piRNAcluster_mapping_normalized_by*/${IN_SAMPLE}.x_rRNA.piRNAcluster.a*.insert.bed2`
-		[ -z ${PIRNA} ] && echo0 "no file in ${IN_DIR}/transposon_piRNAcluster_mapping_normalized_by*/${IN_SAMPLE}.x_rRNA.piRNAcluster.a*.insert.bed2, please specify the right dir/sample via -t" && exit 1
-		awk -v sz=$size 'BEGIN{FS=OFS="\t";split(sz,szsp,"-");l=szsp[1];r=szsp[2]} {if(($3-$2)>=l && ($3-$2)<=r){print $0}}' ${PIRNA} > ${PREFIX2}.temp.piRNA.bed2 && PIRNA=${PREFIX2}.temp.piRNA.bed2 
-		TRANSPOSON=`readlink -f ${IN_DIR}/transposon_piRNAcluster_mapping_normalized_by*/${IN_SAMPLE}.x_rRNA.transposon.a*.insert.bed2`
-		awk -v sz=$size 'BEGIN{FS=OFS="\t";split(sz,szsp,"-");l=szsp[1];r=szsp[2]} {if(($3-$2)>=l && ($3-$2)<=r){print $0}}' ${TRANSPOSON} > ${PREFIX2}.temp.transposon.bed2 && TRANSPOSON=${PREFIX2}.temp.transposon.bed2
-		if [ "$METHOD" == "miRNA" ];then
-			HAIRPIN=`readlink -f ${IN_DIR}/hairpins_mapping/${IN_SAMPLE}.x_rRNA.hairpin.v*m*.bed2`
-		else
-			HAIRPIN=`readlink -f ${IN_DIR}/genome_mapping/${IN_SAMPLE}.x_rRNA.x_hairpin.${GENOME}v*.unique.bed2`
-		fi
-		#calculate normlization factor
-		echo0 2 "calculate normalization factor for treatment file......"
-		FACTOR=(`awk '{sum+=$4/$5} END{print sum/1000000}' ${HAIRPIN}`)
-		echo0 3 "....normalization factor: "$FACTOR
-		#get summary for picluster reads
-		echo0 2 "begin summarize picluster for treatment sample......"
-		echo0 2 "....run get_bed2_summary"
-		get_bed2_summary ${PIRNA} ${PATH_PROG}/annotation/dm3/piRNAcluster.sizes ${PREFIX2} ${FACTOR} ${CPU} picluster
-		echo0 2 "....calculate signal for each position"
-		bed2_bucket ${PIRNA} ${PATH_PROG}/annotation/dm3/piRNAcluster.sizes ${PREFIX2}.picluster.cov ${FACTOR}
-		awk 'BEGIN{FS=OFS="\t"} {a[$1"_"($2%1000)]+=($3);b[$1"_"($2%1000)]+=($5);c[$1"_"($2%1000)]+=(-$4);d[$1"_"($2%1000)]+=(-$6)} END{print "sense_all\tanti_all\tsense_uniq\tanti_uniq";for(i in a){print i,a[i],c[i],b[i],d[i]}}' ${PREFIX2}.picluster.cov  > ${PREFIX2}.picluster.chopped.summary
-		echo0 2 "....merge summary files"
-		merged_bed2_summary.R ${PREFIX2}.picluster
-		#get summary for transposon reads
-		echo0 2 "begin summarize transposon for treatment sample......"
-		echo0 2 "....run get_bed2_summary"
-		get_bed2_summary ${TRANSPOSON} ${PATH_PROG}/annotation/dm3/transposon.sizes ${PREFIX2} ${FACTOR} ${CPU} transposon
-		echo0 2 "....calculate signal for each position"
-		bed2_bucket ${TRANSPOSON} ${PATH_PROG}/annotation/dm3/transposon.sizes ${PREFIX2}.transposon.cov ${FACTOR}
-		echo0 2 "....merge summary files"
-		merged_bed2_summary.R ${PREFIX2}.transposon
-		#get summary for gene reads
-		if [ $GENE  -gt 0 ];then # if -g is bigger than 0, make bed2 file for genes
-			echo0 2 "begin summarize gene for treatment sample......"
-			GF=`readlink -f ${IN_DIR}/genome_mapping/${IN_SAMPLE}.x_rRNA.x_hairpin.${GENOME}v*.all.bed2`
-			awk -v sz=$size 'BEGIN{FS=OFS="\t";split(sz,szsp,"-");l=szsp[1];r=szsp[2]} {if(($3-$2)>=l && ($3-$2)<=r){print $0}}' ${GF} > ${PREFIX2}.temp.gene.bed2 && GF=${PREFIX2}.temp.gene.bed2 
-			bedtools intersect -split -nonamecheck -a ${GF} -b ${PATH_PROG}/annotation/dm3/gene.bed12 -wo -f 1 | awk 'BEGIN{FS=OFS="\t"} {gn=$11;if($6==$13){strand="+";s=$2-$9;e=$3-$9}else{strand="-";s=$10-$3;e=$10-$2};print gn,s,e,$4,$5,strand,$7}' > ${PREFIX2}_temp_gene.bed2 
-		fi
-		if [ $GENE -gt 1 ];then # if -g is bigger than 1, make files for gene buckets
-			echo0 2 "....calculate signal for each position"
-			bed2_bucket ${PREFIX2}_temp_gene.bed2 ${PATH_PROG}/annotation/dm3/gene.sizes ${PREFIX2}.gene.cov ${FACTOR}
-			awk 'BEGIN{FS=OFS="\t"} {if(NR==FNR){a[$2]=$1}else{$1=a[$1];print $0}}' ${PATH_PROG}/annotation/dm3/gene.map ${PREFIX2}_temp_gene.bed2 > ${PREFIX2}_temp_gene.transform.bed2
-			echo0 2 "....run get_bed2_summary"
-			get_bed2_summary ${PREFIX2}_temp_gene.transform.bed2 ${PATH_PROG}/annotation/dm3/gene.map ${PREFIX2} ${FACTOR} ${CPU} gene
-			echo0 2 "....transform gene id to gene name"
-			transform_id_to_name.R ${PREFIX2}.gene ${PATH_PROG}/annotation/dm3/gene.map
-			echo0 2 "....merge summary files"
-			merged_bed2_summary.R ${PREFIX2}.gene
-		fi
-		if [ $GENE -eq 1 ];then # if -g is 1, calculate rpm and species for each gene
-			awk -v factor=${FACTOR} 'BEGIN{FS=OFS="\t";print "uniq_sense_reads\tuniq_antisense_reads\tall_sense_reads\tall_antisense_reads\tuniq_sense_species\tuniq_antisense_species\tall_sense_species\tall_antisense_species"} {if(NR==FNR){if($6=="+" && $5==1){usr[$1]+=$4;uss[$1]++}else if($6=="-" && $5==1){uar[$1]+=$4;uas[$1]++};if($6=="+"){asr[$1]+=$4/$5;ass[$1]+=1/$5}else{aar[$1]+=$4/$5;aas[$1]+=1/$5}}else{print $1,usr[$1]/factor,uar[$1]/factor,asr[$1]/factor,aar[$1]/factor,uss[$1]/1,uas[$1]/1,ass[$1]/1,aas[$1]/1}}' ${PREFIX2}_temp_gene.bed2 ${PATH_PROG}/annotation/dm3/gene.sizes > ${PREFIX2}.gene.summary
-		fi
-	fi
-	###bucket plot
-	if [ "$IN2" == "0" ];then
-		echo0 2 "make bucket plot for picluster......"
-		plot_bed2_summary.R ${CPU} ${PREFIX1}.picluster
-		echo0 2 "make bucket plot for transposon......"
-		plot_bed2_summary.R ${CPU} ${PREFIX1}.transposon
-		if [ $GENE -gt 1 ];then
-			echo0 2 "make bucket plot for gene......"
-			plot_bed2_summary.R ${CPU} ${PREFIX1}.gene
-		fi
-	else
-		echo0 2 "make bucket plot for picluster......"
-		plot_bed2_summary.R ${CPU} ${PREFIX1}.picluster ${PREFIX2}.picluster
-		echo0 2 "make bucket plot for transposon......"
-		plot_bed2_summary.R ${CPU} ${PREFIX1}.transposon ${PREFIX2}.transposon
-		if [ $GENE -eq 1 ];then # plot scatterplot for gene rpm and species between two samples
-			plot_gene_scatter.R 1 ${PREFIX1}.gene ${PREFIX2}.gene
-		fi
-		if [ $GENE -gt 1 ];then
-			echo0 2 "make bucket plot for gene......"
-			plot_bed2_summary.R ${CPU} ${PREFIX1}.gene ${PREFIX2}.gene
-		fi
-		plot_chopped_scatter.R 1 ${PREFIX1}.picluster.chopped ${PREFIX2}.picluster.chopped
-	fi
-	###remove temp files
-	rm ${PREFIX1}.temp* ${PREFIX2}.temp*
+    echo0 4 "\n------ analyze "$size"nt smallRNAs ------\n"
+    ###run for the first sample
+    IN_DIR=`dirname ${IN1}`
+    IN_SAMPLE=`basename ${IN1}`
+    OUTDIR=${OUTDIR%\/}
+    PREFIX1=${OUTDIR}/${IN_SAMPLE}.${size}nt
+    PIRNA=`readlink -f ${IN_DIR}/transposon_piRNAcluster_mapping_normalized_by*/${IN_SAMPLE}*.x_rRNA.piRNAcluster.a*.insert.bed2`
+#    [ -z ${PIRNA} ] && echo0 "no file in ${IN_DIR}/transposon_piRNAcluster_mapping_normalized_by*/${IN_SAMPLE}*.x_rRNA.piRNAcluster.a*.insert.bed2, please specify the right dir/sample via -c" && exit 1
+    awk -v sz=$size 'BEGIN{FS=OFS="\t";split(sz,szsp,"-");l=szsp[1];r=szsp[2]} {if(($3-$2)>=l && ($3-$2)<=r){print $0}}' ${PIRNA} > ${PREFIX1}.temp.piRNA.bed2 && PIRNA=${PREFIX1}.temp.piRNA.bed2
+    TRANSPOSON=`readlink -f ${IN_DIR}/transposon_piRNAcluster_mapping_normalized_by*/${IN_SAMPLE}*.x_rRNA.repBase.a*.insert.bed2`
+    awk -v sz=$size 'BEGIN{FS=OFS="\t";split(sz,szsp,"-");l=szsp[1];r=szsp[2]} {if(($3-$2)>=l && ($3-$2)<=r){print $0}}' ${TRANSPOSON} > ${PREFIX1}.temp.repBase.bed2 && TRANSPOSON=${PREFIX1}.temp.repBase.bed2
+    if [ "$METHOD" == "miRNA" ];then
+        HAIRPIN=`readlink -f ${IN_DIR}/hairpins_mapping/${IN_SAMPLE}*.x_rRNA.hairpin.v*m*.bed2`
+    else
+        HAIRPIN=`readlink -f ${IN_DIR}/genome_mapping/${IN_SAMPLE}*.x_rRNA.x_hairpin.${GENOME}v*.unique.bed2`
+    fi
+    #calculate normlization factor
+    echo0 2 "calculate normalization factor for control sample......"
+    FACTOR=(`awk '{sum+=$4/$5} END{print sum/1000000}' ${HAIRPIN}`)
+    echo0 3 "....normalization factor: "$FACTOR
+
+    #get summary for picluster reads
+    echo0 2 "begin summarize picluster......"
+    echo0 2 "....run get_bed2_summary"
+    get_bed2_summary ${PIRNA} ${PATH_PROG}/annotation/${GENOME}/piRNAcluster.sizes ${PREFIX1} ${FACTOR} ${CPU} picluster
+    echo0 2 "....calculate signal for each position"
+    bed2_bucket ${PIRNA} ${PATH_PROG}/annotation/${GENOME}/piRNAcluster.sizes ${PREFIX1}.picluster.cov ${FACTOR}
+    awk 'BEGIN{FS=OFS="\t"} {a[$1"_"($2%1000)]+=($3);b[$1"_"($2%1000)]+=($5);c[$1"_"($2%1000)]+=(-$4);d[$1"_"($2%1000)]+=(-$6)} END{print "sense_all\tanti_all\tsense_uniq\tanti_uniq";for(i in a){print i,a[i],c[i],b[i],d[i]}}' ${PREFIX1}.picluster.cov  > ${PREFIX1}.picluster.chopped.summary
+    echo0 2 "....merge summary files"
+    merged_bed2_summary.R ${PREFIX1}.picluster
+
+    #get summary for transposon reads
+    echo0 2 "begin summarize transposon for control sample......"
+    echo0 2 "....run get_bed2_summary"
+    get_bed2_summary ${TRANSPOSON} ${PATH_PROG}/annotation/${GENOME}/repBase.sizes ${PREFIX1} ${FACTOR} ${CPU} transposon
+    echo0 2 "....calculate signal for each position"
+    bed2_bucket ${TRANSPOSON} ${PATH_PROG}/annotation/${GENOME}/repBase.sizes ${PREFIX1}.transposon.cov ${FACTOR}
+    echo0 2 "....merge summary files"
+    merged_bed2_summary.R ${PREFIX1}.transposon
+
+    #get summary for gene reads
+    if [ $GENE -gt 0 ];then # if -g is bigger than 0, make bed2 file for genes
+        echo0 2 "begin summarize gene for control sample......"
+        GF=`readlink -f ${IN_DIR}/genome_mapping/${IN_SAMPLE}*.x_rRNA.x_hairpin.${GENOME}v*.all.bed2`
+        awk -v sz=$size 'BEGIN{FS=OFS="\t";split(sz,szsp,"-");l=szsp[1];r=szsp[2]} {if(($3-$2)>=l && ($3-$2)<=r){print $0}}' ${GF} > ${PREFIX1}.temp.gene.bed2 && GF=${PREFIX1}.temp.gene.bed2
+        echo0 2 "....intersect with gene.bed12"
+        bedtools intersect -split -nonamecheck -a ${GF} -b ${PATH_PROG}/annotation/${GENOME}/gene.bed12 -wo -f 1 | awk 'BEGIN{FS=OFS="\t"} {gn=$11;if($6==$13){strand="+";s=$2-$9;e=$3-$9}else{strand="-";s=$10-$3;e=$10-$2};print gn,s,e,$4,$5,strand,$7}' > ${PREFIX1}_temp_gene.bed2
+    fi
+    if [ $GENE -gt 1 ];then # if -g is bigger than 1, make files for gene buckets
+        echo0 2 "....calculate signal for each position"
+        bed2_bucket ${PREFIX1}_temp_gene.bed2 ${PATH_PROG}/annotation/${GENOME}/gene.sizes ${PREFIX1}.gene.cov ${FACTOR}
+        awk 'BEGIN{FS=OFS="\t"} {if(NR==FNR){a[$2]=$1}else{$1=a[$1];print $0}}' ${PATH_PROG}/annotation/${GENOME}/gene.map ${PREFIX1}_temp_gene.bed2 > ${PREFIX1}_temp_gene.transform.bed2
+        echo0 2 "....run get_bed2_summary"
+        get_bed2_summary ${PREFIX1}_temp_gene.transform.bed2 ${PATH_PROG}/annotation/${GENOME}/gene.map ${PREFIX1} ${FACTOR} ${CPU} gene
+        echo0 2 "....transform gene id to gene name"
+        transform_id_to_name.R ${PREFIX1}.gene ${PATH_PROG}/annotation/${GENOME}/gene.map
+        echo0 2 "....merge summary files"
+        merged_bed2_summary.R ${PREFIX1}.gene
+    fi
+    if [ $GENE -eq 1 ];then # if -g is 1, calculate rpm and species for each gene
+        awk -v factor=${FACTOR} 'BEGIN{FS=OFS="\t";print "uniq_sense_reads\tuniq_antisense_reads\tall_sense_reads\tall_antisense_reads\tuniq_sense_species\tuniq_antisense_species\tall_sense_species\tall_antisense_species"} {if(NR==FNR){if($6=="+" && $5==1){usr[$1]+=$4;uss[$1]++}else if($6=="-" && $5==1){uar[$1]+=$4;uas[$1]++};if($6=="+"){asr[$1]+=$4/$5;ass[$1]+=1/$5}else{aar[$1]+=$4/$5;aas[$1]+=1/$5}}else{print $1,usr[$1]/factor,uar[$1]/factor,asr[$1]/factor,aar[$1]/factor,uss[$1]/1,uas[$1]/1,ass[$1]/1,aas[$1]/1}}' ${PREFIX1}_temp_gene.bed2 ${PATH_PROG}/annotation/${GENOME}/gene.sizes > ${PREFIX1}.gene.summary
+    fi
+
+    ###run for the second sample if -c is set
+    if [ "${IN2}" != "0" ];then
+        IN_DIR=`dirname ${IN2}`
+        IN_SAMPLE=`basename ${IN2}`
+        OUTDIR=${OUTDIR%\/}
+        PREFIX2=${OUTDIR}/${IN_SAMPLE}.${size}nt
+        PIRNA=`readlink -f ${IN_DIR}/transposon_piRNAcluster_mapping_normalized_by*/${IN_SAMPLE}*.x_rRNA.piRNAcluster.a*.insert.bed2`
+#        [ -z ${PIRNA} ] && echo0 "no file in ${IN_DIR}/transposon_piRNAcluster_mapping_normalized_by*/${IN_SAMPLE}*.x_rRNA.piRNAcluster.a*.insert.bed2, please specify the right dir/sample via -t" && exit 1
+        awk -v sz=$size 'BEGIN{FS=OFS="\t";split(sz,szsp,"-");l=szsp[1];r=szsp[2]} {if(($3-$2)>=l && ($3-$2)<=r){print $0}}' ${PIRNA} > ${PREFIX2}.temp.piRNA.bed2 && PIRNA=${PREFIX2}.temp.piRNA.bed2
+        TRANSPOSON=`readlink -f ${IN_DIR}/transposon_piRNAcluster_mapping_normalized_by*/${IN_SAMPLE}*.x_rRNA.repBase.a*.insert.bed2`
+        awk -v sz=$size 'BEGIN{FS=OFS="\t";split(sz,szsp,"-");l=szsp[1];r=szsp[2]} {if(($3-$2)>=l && ($3-$2)<=r){print $0}}' ${TRANSPOSON} > ${PREFIX2}.temp.repBase.bed2 && TRANSPOSON=${PREFIX2}.temp.repBase.bed2
+        if [ "$METHOD" == "miRNA" ];then
+            HAIRPIN=`readlink -f ${IN_DIR}/hairpins_mapping/${IN_SAMPLE}*.x_rRNA.hairpin.v*m*.bed2`
+        else
+            HAIRPIN=`readlink -f ${IN_DIR}/genome_mapping/${IN_SAMPLE}*.x_rRNA.x_hairpin.${GENOME}v*.unique.bed2`
+        fi
+        #calculate normlization factor
+        echo0 2 "calculate normalization factor for treatment file......"
+        FACTOR=(`awk '{sum+=$4/$5} END{print sum/1000000}' ${HAIRPIN}`)
+        echo0 3 "....normalization factor: "$FACTOR
+        #get summary for picluster reads
+        echo0 2 "begin summarize picluster for treatment sample......"
+        echo0 2 "....run get_bed2_summary"
+        get_bed2_summary ${PIRNA} ${PATH_PROG}/annotation/${GENOME}/piRNAcluster.sizes ${PREFIX2} ${FACTOR} ${CPU} picluster
+        echo0 2 "....calculate signal for each position"
+        bed2_bucket ${PIRNA} ${PATH_PROG}/annotation/${GENOME}/piRNAcluster.sizes ${PREFIX2}.picluster.cov ${FACTOR}
+        awk 'BEGIN{FS=OFS="\t"} {a[$1"_"($2%1000)]+=($3);b[$1"_"($2%1000)]+=($5);c[$1"_"($2%1000)]+=(-$4);d[$1"_"($2%1000)]+=(-$6)} END{print "sense_all\tanti_all\tsense_uniq\tanti_uniq";for(i in a){print i,a[i],c[i],b[i],d[i]}}' ${PREFIX2}.picluster.cov  > ${PREFIX2}.picluster.chopped.summary
+        echo0 2 "....merge summary files"
+        merged_bed2_summary.R ${PREFIX2}.picluster
+        #get summary for transposon reads
+        echo0 2 "begin summarize transposon for treatment sample......"
+        echo0 2 "....run get_bed2_summary"
+        get_bed2_summary ${TRANSPOSON} ${PATH_PROG}/annotation/${GENOME}/repBase.sizes ${PREFIX2} ${FACTOR} ${CPU} transposon
+        echo0 2 "....calculate signal for each position"
+        bed2_bucket ${TRANSPOSON} ${PATH_PROG}/annotation/${GENOME}/repBase.sizes ${PREFIX2}.transposon.cov ${FACTOR}
+        echo0 2 "....merge summary files"
+        merged_bed2_summary.R ${PREFIX2}.transposon
+        #get summary for gene reads
+        if [ $GENE  -gt 0 ];then # if -g is bigger than 0, make bed2 file for genes
+            echo0 2 "begin summarize gene for treatment sample......"
+            GF=`readlink -f ${IN_DIR}/genome_mapping/${IN_SAMPLE}*.x_rRNA.x_hairpin.${GENOME}v*.all.bed2`
+            awk -v sz=$size 'BEGIN{FS=OFS="\t";split(sz,szsp,"-");l=szsp[1];r=szsp[2]} {if(($3-$2)>=l && ($3-$2)<=r){print $0}}' ${GF} > ${PREFIX2}.temp.gene.bed2 && GF=${PREFIX2}.temp.gene.bed2
+            bedtools intersect -split -nonamecheck -a ${GF} -b ${PATH_PROG}/annotation/${GENOME}/gene.bed12 -wo -f 1 | awk 'BEGIN{FS=OFS="\t"} {gn=$11;if($6==$13){strand="+";s=$2-$9;e=$3-$9}else{strand="-";s=$10-$3;e=$10-$2};print gn,s,e,$4,$5,strand,$7}' > ${PREFIX2}_temp_gene.bed2
+        fi
+        if [ $GENE -gt 1 ];then # if -g is bigger than 1, make files for gene buckets
+            echo0 2 "....calculate signal for each position"
+            bed2_bucket ${PREFIX2}_temp_gene.bed2 ${PATH_PROG}/annotation/${GENOME}/gene.sizes ${PREFIX2}.gene.cov ${FACTOR}
+            awk 'BEGIN{FS=OFS="\t"} {if(NR==FNR){a[$2]=$1}else{$1=a[$1];print $0}}' ${PATH_PROG}/annotation/${GENOME}/gene.map ${PREFIX2}_temp_gene.bed2 > ${PREFIX2}_temp_gene.transform.bed2
+            echo0 2 "....run get_bed2_summary"
+            get_bed2_summary ${PREFIX2}_temp_gene.transform.bed2 ${PATH_PROG}/annotation/${GENOME}/gene.map ${PREFIX2} ${FACTOR} ${CPU} gene
+            echo0 2 "....transform gene id to gene name"
+            transform_id_to_name.R ${PREFIX2}.gene ${PATH_PROG}/annotation/${GENOME}/gene.map
+            echo0 2 "....merge summary files"
+            merged_bed2_summary.R ${PREFIX2}.gene
+        fi
+        if [ $GENE -eq 1 ];then # if -g is 1, calculate rpm and species for each gene
+            awk -v factor=${FACTOR} 'BEGIN{FS=OFS="\t";print "uniq_sense_reads\tuniq_antisense_reads\tall_sense_reads\tall_antisense_reads\tuniq_sense_species\tuniq_antisense_species\tall_sense_species\tall_antisense_species"} {if(NR==FNR){if($6=="+" && $5==1){usr[$1]+=$4;uss[$1]++}else if($6=="-" && $5==1){uar[$1]+=$4;uas[$1]++};if($6=="+"){asr[$1]+=$4/$5;ass[$1]+=1/$5}else{aar[$1]+=$4/$5;aas[$1]+=1/$5}}else{print $1,usr[$1]/factor,uar[$1]/factor,asr[$1]/factor,aar[$1]/factor,uss[$1]/1,uas[$1]/1,ass[$1]/1,aas[$1]/1}}' ${PREFIX2}_temp_gene.bed2 ${PATH_PROG}/annotation/${GENOME}/gene.sizes > ${PREFIX2}.gene.summary
+        fi
+    fi
+
+    ###bucket plot
+    if [ "$IN2" == "0" ];then
+        echo0 2 "make bucket plot for picluster......"
+        plot_bed2_summary.R ${CPU} ${PREFIX1}.picluster
+        echo0 2 "make bucket plot for transposon......"
+        plot_bed2_summary.R ${CPU} ${PREFIX1}.transposon
+        if [ $GENE -gt 1 ];then
+            echo0 2 "make bucket plot for gene......"
+            plot_bed2_summary.R ${CPU} ${PREFIX1}.gene
+        fi
+    else
+        echo0 2 "make bucket plot for picluster......"
+        plot_bed2_summary.R ${CPU} ${PREFIX1}.picluster ${PREFIX2}.picluster
+        echo0 2 "make bucket plot for transposon......"
+        plot_bed2_summary.R ${CPU} ${PREFIX1}.transposon ${PREFIX2}.transposon
+        if [ $GENE -eq 1 ];then # plot scatterplot for gene rpm and species between two samples
+            plot_gene_scatter.R 1 ${PREFIX1}.gene ${PREFIX2}.gene
+        fi
+        if [ $GENE -gt 1 ];then
+            echo0 2 "make bucket plot for gene......"
+            plot_bed2_summary.R ${CPU} ${PREFIX1}.gene ${PREFIX2}.gene
+        fi
+        plot_chopped_scatter.R 1 ${PREFIX1}.picluster.chopped ${PREFIX2}.picluster.chopped
+    fi
+    ###remove temp files
+    if [ "$IN2" == "0" ];then
+        rm ${PREFIX1}.temp*
+    else
+        rm ${PREFIX1}.temp* ${PREFIX2}.temp*
+    fi
 done
 echo0 2 "------ Finished🍺🍺🍺 ------"

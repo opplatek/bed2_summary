@@ -1,11 +1,13 @@
 #!/usr/bin/env Rscript
 library(parallel)
 Args=commandArgs()
-
+#print(Args)
 # help----
 if(length(Args)<7){
 	stop(paste("usage:\n\t",substr(Args[4],8,100)," CPU prefix1 [prefix2_to_compare_with_prefix1]\n",sep=""))
 }
+
+#Args<-c(1,2,3,4,5, "1", "/home/joppelt/projects/pirna_mouse/analysis/pirna-clusters/results/mmu.sRNASeq.MiwiIP.MiwiHet.P24.1/piPipes/bed2_summary/reads.1.adtrim.20-23nt.transposon")
 
 # function----
 fun_zscore=function(x){
@@ -225,7 +227,8 @@ fun_sub=function(x){
 # runs here----
 # judge mode (single or comparison)
 system("echo0 2 \"....read files and pre-plot\"")
-if(length(Args)==6){
+#print(Args)
+if(length(Args)==7){
 	# single mode
 	pre=paste(strsplit(Args[7],".",fixed=T)[[1]][1:(length(strsplit(Args[7],".",fixed=T)[[1]])-2)],collapse=".")
 	sn=strsplit(Args[7],"/")[[1]][length(strsplit(Args[7],"/")[[1]])]
@@ -247,53 +250,55 @@ if(length(Args)==6){
 	imp_pi_dm3=c(which(rn=="42AB"),which(rn=="flam"))
 	# plot
 	pdf(paste(pre,".",appendix,".temp.head.pdf", sep=""), width=21, height=5*7/13, useDingbats=F)
-	# plot overall summary first
-	laymat=matrix(1,7,7)
-	laymat[2:4,1]=2; laymat[5:7,1]=2
-	laymat[2:4,2]=3; laymat[5:7,2]=4;
-	laymat[2:4,3:4]=5; laymat[5:7,3:4]=6;
-	for(i in 5:7){laymat[2:4,i]=i*2-3}
-	for(i in 5:7){laymat[5:7,i]=i*2-2}
-	layout(laymat)
-	par(cex=0.5,tcl=0.3)
-	par(mar=c(0,0,0,0),cex=1)
-	plot.new()
-	text(0,0.5,label="overall summary",font=2,cex=1,pos=4)
-	fun_plot_pp(apply(pp,1,sum))
-	fun_plot_lendis(apply(all_reads_sense_lendis1,1,sum),apply(all_reads_anti_lendis,1,sum),"allMap reads")
-	for(i in 1:2){plot.new()}
-	fun_plot_lendis(apply(uniq_reads_sense_lendis,1,sum),apply(uniq_reads_anti_lendis,1,sum),"uniqMap reads")
-	fun_plot_lendis(apply(all_species_sense_lendis,1,sum),apply(all_species_anti_lendis,1,sum),"allMap species")
-	fun_plot_lendis(apply(uniq_species_sense_lendis,1,sum),apply(uniq_species_anti_lendis,1,sum),"uniqMap species")
+  	# plot overall summary first
+  	laymat=matrix(1,7,7)
+  	laymat[2:4,1]=2; laymat[5:7,1]=2
+  	laymat[2:4,2]=3; laymat[5:7,2]=4;
+  	laymat[2:4,3:4]=5; laymat[5:7,3:4]=6;
+  	for(i in 5:7){laymat[2:4,i]=i*2-3}
+  	for(i in 5:7){laymat[5:7,i]=i*2-2}
+  	layout(laymat)
+  	par(cex=0.5,tcl=0.3)
+  	par(mar=c(0,0,0,0),cex=1)
+  	plot.new()
+  	text(0,0.5,label="overall summary",font=2,cex=1,pos=4)
+  	fun_plot_pp(apply(pp,1,sum))
+  	fun_plot_lendis(apply(all_reads_sense_lendis,1,sum),apply(all_reads_anti_lendis,1,sum),"allMap reads")
+  	for(i in 1:2){plot.new()}
+  	fun_plot_lendis(apply(uniq_reads_sense_lendis,1,sum),apply(uniq_reads_anti_lendis,1,sum),"uniqMap reads")
+  	fun_plot_lendis(apply(all_species_sense_lendis,1,sum),apply(all_species_anti_lendis,1,sum),"allMap species")
+  	fun_plot_lendis(apply(uniq_species_sense_lendis,1,sum),apply(uniq_species_anti_lendis,1,sum),"uniqMap species")
 	dev.off()
 	# plot buckets for each genes parallely
 	cl=makeCluster(as.numeric(Args[6]))
-	clusterExport(cl=cl,varlist=c("sn","uniq_reads_sense_lendis","uniq_reads_anti_lendis","uniq_species_sense_lendis","uniq_species_anti_lendis","all_reads_sense_lendis","all_reads_anti_lendis","all_species_sense_lendis","all_species_anti_lendis","pp","cov","fun_plot_pp","fun_plot_lendis","fun_plot_bucket","pre","appendix","fun_sub"),envir=environment())
+	clusterExport(cl=cl,varlist=c("sn","uniq_reads_sense_lendis","uniq_reads_anti_lendis","uniq_species_sense_lendis","uniq_species_anti_lendis","all_reads_sense_lendis","all_reads_anti_lendis","all_species_sense_lendis",
+	                              "all_species_anti_lendis","pp","cov","fun_plot_pp","fun_plot_lendis","fun_plot_bucket","pre","appendix","Args","fun_sub"),envir=environment())
 	system("echo0 2 \"....plot buckets for each element\"")
 	parLapply(cl,rn,fun_plot_single_mode)
 	# merge pdfs
 	system("echo0 2 \"....merge pdfs\"")
-	if(length(rn)>500){
-		fun_merge=function(in_pdfs){
-			system(paste("gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dNumRenderingThreads=",Args[6]," -sOutputFile=",pre,".",appendix,".pdf ",pre,".",appendix,".temp.head.pdf",in_pdfs,sep=""))
-		}
-		system(paste("mkdir ",pre,".",appendix,".pdf",sep=""))
-		trn=sort(rn)
-		l_in_pdfs=c()
-		for(i in 1:ceiling(length(trn)/500)){
-			tlist=trn[((i-1)*500+1):min(i*500,length(trn))]
-			in_pdfs=paste(pre,".",appendix,".pdf/",trn[((i-1)*500+1)],"---",trn[min(i*500,length(trn))],".pdf ",pre,".",appendix,".temp.head.pdf",sep="")
-			for(i in tlist){
-				in_pdfs=paste(in_pdfs," ",pre,".",appendix,".temp.body.",i,".pdf",sep="")
-			}
-			in_pdfs=fun_sub(in_pdfs)
-			l_in_pdfs=c(l_in_pdfs,in_pdfs)
-		}
-		parLapply(cl,l_in_pdfs,fun_merge)
-		system(paste("rm ",pre,".",appendix,".temp.*.pdf",sep=""))
-	}else{
-		system(paste("gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dNumRenderingThreads=",Args[6]," -sOutputFile=",pre,"_vs_",sn2,".",appendix,".pdf ",pre,"_vs_",sn2,".",appendix,".temp.head.pdf ",pre,"_vs_",sn2,".",appendix,".temp.body.*.pdf && rm ",pre,"_vs_",sn2,".",appendix,".temp.*.pdf",sep=""))
-	}
+	# if(length(rn)>500){
+	# 	fun_merge=function(in_pdfs){
+	# 		system(paste("gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dNumRenderingThreads=",as.numeric(Args[6])," -sOutputFile=",pre,".",appendix,".pdf ",pre,".",appendix,".temp.head.pdf ",in_pdfs,sep=""))
+	# 	}
+	# 	system(paste("mkdir ",pre,".",appendix,"_pdf",sep=""))
+	# 	trn=sort(rn)
+	# 	l_in_pdfs=c()
+	# 	for(i in 1:ceiling(length(trn)/500)){
+	# 		tlist=trn[((i-1)*500+1):min(i*500,length(trn))]
+	# 		in_pdfs=paste(pre,".",appendix,"_pdf/",trn[((i-1)*500+1)],"---",trn[min(i*500,length(trn))],".pdf ",pre,".",appendix,".temp.head.pdf",sep="")
+	# 		for(i in tlist){
+	# 			in_pdfs=paste(in_pdfs," ",pre,".",appendix,".temp.body.",i,".pdf",sep="")
+	# 		}
+	# 		in_pdfs=fun_sub(in_pdfs)
+	# 		l_in_pdfs=c(l_in_pdfs,in_pdfs)
+	# 	}
+	# 	print("Merging")
+	# 	parLapply(cl,l_in_pdfs,fun_merge)
+	# 	system(paste("rm ",pre,".",appendix,".temp.*.pdf",sep=""))
+	# }else{
+		system(paste("gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dNumRenderingThreads=",as.numeric(Args[6])," -sOutputFile=",pre,".",appendix,".pdf ",pre,".",appendix,".temp.head.pdf ",pre,".",appendix,".temp.body.*.pdf && rm ",pre,".",appendix,".temp.*.pdf",sep=""))
+	# }
 }else{
 	# comparison mode
 	pre=paste(strsplit(Args[7],".",fixed=T)[[1]][1:(length(strsplit(Args[7],".",fixed=T)[[1]])-2)],collapse=".")
@@ -357,7 +362,7 @@ if(length(Args)==6){
 	for(i in 6:8){laymat[8:10,i]=i*4-8}
 	for(i in 6:8){laymat[11:13,i]=i*4-7}
 	layout(laymat)
-	par(cex=0.5,tcl=0.3,xpd=F)
+	par(cex=0.5,tcl=0.3) #,xpd=F)
 	par(mar=c(0,0,0,0),cex=1)
 	plot.new()
 	text(0,0.5,label="overall summary",font=2,cex=1,pos=4)
@@ -379,28 +384,28 @@ if(length(Args)==6){
 	parLapply(cl,rn,fun_plot_comparison_mode)
 	# merge pdfs
 	system("echo0 2 \"....merge pdfs\"")
-	if(length(rn)>500){
-		fun_merge=function(in_pdfs){
-			command=paste("gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dNumRenderingThreads=",Args[6]," -sOutputFile=",in_pdfs,sep="")
-			write.table(command,"ss",row.names=F,col.names=F,sep="\t",quote=F)
-			system(command)
-		}
-		system(paste("mkdir ",pre,"_vs_",sn2,".",appendix,".pdf",sep=""))
-		trn=sort(rn)
-		l_in_pdfs=c()
-		for(i in 1:ceiling(length(trn)/500)){
-			tlist=trn[((i-1)*500+1):min(i*500,length(trn))]
-			in_pdfs=paste(pre,"_vs_",sn2,".",appendix,".pdf/",trn[((i-1)*500+1)],"---",trn[min(i*500,length(trn))],".pdf ",pre,"_vs_",sn2,".",appendix,".temp.head.pdf",sep="")
-			for(i in tlist){
-				in_pdfs=paste(in_pdfs," ",pre,"_vs_",sn2,".",appendix,".temp.body.",i,".pdf",sep="")
-			}
-			in_pdfs=fun_sub(in_pdfs)
-			l_in_pdfs=c(l_in_pdfs,in_pdfs)
-		}
-		parLapply(cl,l_in_pdfs,fun_merge)
-		system(paste("rm ",pre,"_vs_",sn2,".",appendix,".temp.*.pdf",sep=""))
-	}else{
-		system(paste("gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dNumRenderingThreads=",Args[6]," -sOutputFile=",pre,"_vs_",sn2,".",appendix,".pdf ",pre,"_vs_",sn2,".",appendix,".temp.head.pdf ",pre,"_vs_",sn2,".",appendix,".temp.body.*.pdf && rm ",pre,"_vs_",sn2,".",appendix,".temp.*.pdf",sep=""))
-	}
+#	if(length(rn)>500){
+#		fun_merge=function(in_pdfs){
+#			command=paste("gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dNumRenderingThreads=",as.numeric(Args[6])," -sOutputFile=",in_pdfs,sep="")
+#			write.table(command,"ss",row.names=F,col.names=F,sep="\t",quote=F)
+#			system(command)
+#		}
+#		system(paste("mkdir ",pre,"_vs_",sn2,".",appendix,".pdf",sep=""))
+#		trn=sort(rn)
+#		l_in_pdfs=c()
+#		for(i in 1:ceiling(length(trn)/500)){
+#			tlist=trn[((i-1)*500+1):min(i*500,length(trn))]
+#			in_pdfs=paste(pre,"_vs_",sn2,".",appendix,".pdf/",trn[((i-1)*500+1)],"---",trn[min(i*500,length(trn))],".pdf ",pre,"_vs_",sn2,".",appendix,".temp.head.pdf",sep="")
+#			for(i in tlist){
+#				in_pdfs=paste(in_pdfs," ",pre,"_vs_",sn2,".",appendix,".temp.body.",i,".pdf",sep="")
+#			}
+#			in_pdfs=fun_sub(in_pdfs)
+#			l_in_pdfs=c(l_in_pdfs,in_pdfs)
+#		}
+#		parLapply(cl,l_in_pdfs,fun_merge)
+#		system(paste("rm ",pre,"_vs_",sn2,".",appendix,".temp.*.pdf",sep=""))
+#	}else{
+		system(paste("gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dNumRenderingThreads=",as.numeric(Args[6])," -sOutputFile=",pre,"_vs_",sn2,".",appendix,".pdf ",pre,"_vs_",sn2,".",appendix,".temp.head.pdf ",pre,"_vs_",sn2,".",appendix,".temp.body.*.pdf && rm ",pre,"_vs_",sn2,".",appendix,".temp.*.pdf",sep=""))
+#	}
 }
 stopCluster(cl)

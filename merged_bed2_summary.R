@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 Args=commandArgs()
-
+#print(Args)
 # function----
 fun_zscore=function(x){
 	x_HkGene=x[c(1:9,11:30)]
@@ -8,6 +8,7 @@ fun_zscore=function(x){
 	z=(x_treat-mean(x_HkGene))/sd(x_HkGene)
 	return(z)
 }
+#print(Args)
 # read files
 uniq_reads_sense_lendis=read.table(paste(Args[6],".uniq.reads.sense.lendis",sep=""),header=T,row.names=NULL,check.names=F)
 uniq_reads_anti_lendis=read.table(paste(Args[6],".uniq.reads.antisense.lendis",sep=""),header=T,row.names=NULL,check.names=F)
