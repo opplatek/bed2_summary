@@ -55,7 +55,7 @@ please send questions or bugs to yutianxiong@gmail.com
 
 ## Prepare references for other organisms
 ```
-assembly=mm10
+assembly="mm10"
 mkdir ~/tools/bed2_summary-6c01dc3/annotation/$assembly
 samtools faidx ~/tools/piPipes-c93bde3/common/$assembly/$assembly.piRNAcluster.fa
 cat ~/tools/piPipes-c93bde3/common/$assembly/$assembly.piRNAcluster.fa.fai | cut -f1,2 > ~/tools/bed2_summary-6c01dc3/annotation/$assembly/piRNAcluster.sizes
@@ -66,3 +66,59 @@ samtools faidx ~/tools/piPipes-c93bde3/common/$assembly/$assembly.repBase.fa
 cat ~/tools/piPipes-c93bde3/common/$assembly/$assembly.repBase.fa.fai | cut -f1,2 > ~/tools/bed2_summary-6c01dc3/annotation/$assembly/repBase.sizes
 ```
 
+## Run example
+After running piPipes, you can run:
+### Single-sample mode
+
+```
+assembly="mm10"
+
+name="sample1"
+in_fastq="reads.1.adtrim.fastq.gz"
+sdir=results/$name
+
+mkdir -p $sdir/bed2_summary
+
+run_bed2_summary \
+    -c $sdir/${in_fastq%.fastq.gz} \
+    -o $sdir/bed2_summary -g $assembly -n uniq -G 1 -p 1
+```
+### Dual-sample mode
+```
+assembly="mm10"
+
+name1="sample1"
+name2="sample2"
+
+in_fastq="reads.1.adtrim.fastq.gz"
+
+sdir1=$RES_DIR/$name1/piPipes
+sdir2=$RES_DIR/$name2/piPipes
+sdir=$RES_DIR/${name1}vs${name2}/piPipes
+
+# Make shorter, nicer names
+name1=`echo $name1 | sed 's/mmu.sRNASeq.//' | sed 's/\./-/g'`
+name2=`echo $name2 | sed 's/mmu.sRNASeq.//' | sed 's/\./-/g'`
+    
+mkdir -p $sdir/bed2_summary
+    
+# Link original results so we have different input names
+for a in transposon_piRNAcluster_mapping_normalized_by_allxmirna hairpins_mapping genome_mapping; do 
+    echo $a
+    mkdir -p $sdir/bed2_summary/$name1/$a
+    mkdir -p $sdir/bed2_summary/$name2/$a
+    
+    for j in $sdir1/$a/*; do
+        link=`echo $j | sed "s/${in_fastq%.fastq.gz}/$name1/"`
+        ln -sf ../../../../../../$j $sdir/bed2_summary/$name1/$a/$(basename $link)
+    done
+    for j in $sdir2/$a/*; do
+        link=`echo $j | sed "s/${in_fastq%.fastq.gz}/$name2/"`    
+        ln -sf ../../../../../../$j $sdir/bed2_summary/$name2/$a/$(basename $link)
+    done
+done
+    
+run_bed2_summary \
+    -c $sdir/bed2_summary/$name1/$name1 -t $sdir/bed2_summary/$name2/$name2 \
+    -o $sdir/bed2_summary -g $assembly -n uniq -G 1 -p 1
+```
